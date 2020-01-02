@@ -9,6 +9,7 @@ import os
 
 import mdtraj as md
 import networkx as nx
+import numpy as np
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 
@@ -31,11 +32,21 @@ def parse_pdb(pdb_fname, base_fname=None):
     connect_dict = {trj.top.atom(k): v for k, v in connect_dict.items()}
     nx.set_node_attributes(G, connect_dict, "connect")
 
+    xyz_dict = {atom: xyz for atom, xyz in zip(trj.top.atoms, trj.xyz[0])}
+    nx.set_node_attributes(G, xyz_dict, "xyz")
+
     if base_fname is not None:
         G_base = parse_pdb(pdb_fname=base_fname, base_fname=None)
         mapping = subgraph_match(G, G_base)[0]
         base_connect = {k: G_base.nodes[v]["connect"] for k, v in mapping.items()}
         nx.set_node_attributes(G, base_connect, "connect")
+
+    edge_idxs = np.empty(shape=(G.number_of_edges(), 2), dtype=np.int)
+    for i, edge in enumerate(G.edges):
+        edge_idxs[i] = edge[0].index, edge[1].index
+    edge_distances = md.compute_distances(trj, edge_idxs)[0]
+    distance_dict = {edge: dis for edge, dis in zip(G.edges, edge_distances)}
+    nx.set_edge_attributes(G, distance_dict, "distance")
     return G
 
 
