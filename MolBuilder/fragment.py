@@ -2,33 +2,28 @@
 fragment.py
 Molecule Builder
 
-Handles the primary functions
+Fragment class
 """
 
-
-def canvas(with_attribution=True):
-    """
-    Placeholder function to show example docstring (NumPy format)
-
-    Replace this function and doc string for your own project
-
-    Parameters
-    ----------
-    with_attribution : bool, Optional, default: True
-        Set whether or not to display who the quote is from
-
-    Returns
-    -------
-    quote : str
-        Compiled string including quote and optional attribution
-    """
-
-    quote = "The code is but a canvas to our imagination."
-    if with_attribution:
-        quote += "\n\t- Adapted from Henry David Thoreau"
-    return quote
+from MolBuilder.utils import parse_pdb, get_base_fname
 
 
-if __name__ == "__main__":
-    # Do something if this file is invoked on its own
-    print(canvas())
+class Fragment:
+    def __init__(self, pdb_fname, fragment_type=None):
+        self.pdb_fname = pdb_fname
+        self.fragment_type = fragment_type
+        self.G = self._parse_pdb()
+
+    def _parse_pdb(self):
+        if self.fragment_type is not None:
+            base_fname = get_base_fname(self.fragment_type)
+        else:
+            base_fname = None
+        return parse_pdb(self.pdb_fname, base_fname)
+
+
+class Residue(Fragment):
+    def _parse_pdb(self):
+        self.fragment_type = "residue"
+        base_fname = get_base_fname(self.fragment_type)
+        return parse_pdb(self.pdb_fname, base_fname)
