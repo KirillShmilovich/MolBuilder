@@ -10,6 +10,8 @@ import os
 import mdtraj as md
 import networkx as nx
 import numpy as np
+from scipy.optimize import minimize, Bounds
+from scipy.spatial.distance import cdist
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 
@@ -20,7 +22,7 @@ def get_data(path):
 
 def parse_pdb(pdb_fname, base_fname=None):
     """Returns a graph object with available connectivity information"""
-    trj = md.load(pdb_fname)
+    trj = md.load(pdb_fname).center_coordinates()
     G = make_bondgraph(trj.top)
     connect_dict = get_pdb_connect_dict(pdb_fname)
 
@@ -99,5 +101,80 @@ def get_pdb_connect_dict(pdb_fname):
     return connect
 
 
+def dict_compare(ref_dict, compare_dict):
+    """Returns True if key-value pairs in ref_dict are same as compare_dict"""
+    for k, v in ref_dict.items():
+        if compare_dict[k] != v:
+            return False
+    return True
+
+
+def flatten_list(a):
+    return sum(a, [])
+
+
+def rotation_matrix(alpha, beta, gamma):
+    """ Returns rotation matrix for transofmorming N x 3 coords (A @ R)"""
+    Rx = np.array(
+        [
+            [1, 0, 0],
+            [0, np.cos(alpha), -np.sin(alpha)],
+            [0, np.sin(alpha), np.cos(alpha)],
+        ]
+    )
+    Ry = np.array(
+        [[np.cos(beta), 0, np.sin(beta)], [0, 1, 0], [-np.sin(beta), 0, np.cos(beta)]]
+    )
+    Rz = np.array(
+        [
+            [np.cos(gamma), -np.sin(gamma), 0],
+            [np.sin(gamma), np.cos(gamma), 0],
+            [0, 0, 1],
+        ]
+    )
+    R = Rz @ Ry @ Rx
+    return R.T
+
+
+def correct_xyz(A, B, eq_idxs, d_max):
+    i, j = eq_idxs
+
+    def obj_fun(x, A, B):
+        alpha, beta, gamma, t0, t1, t2 = x
+        R = rotation_matrix(alpha, beta, gamma)
+        t = np.array([t0, t1, t2]).reshape(1, 3)
+        Bprime = B @ R + t
+        Y = cdist(A, Bprime)
+        return np.linalg.norm(Y)
+
+    def cons_f(x):
+        alpha, beta, gamma, t0, t1, t2 = x
+        R = rotation_matrix(alpha, beta, gamma)
+        t = np.array([t0, t1, t2]).reshape(1, 3)
+        Bprime = B @ R + t
+        # return np.linalg.norm(A[i] - Bprime[j])
+        return np.abs(np.linalg.norm(A[i] - Bprime[j]) - d_max)
+
+    # cons = NonlinearConstraint(cons_f, 0, d_max)
+    cons = {"type": "eq", "fun": cons_f}
+    bounds = Bounds(
+        [0, 0, 0, 0, 0, 0], [2 * np.pi, 2 * np.pi, 2 * np.pi, np.inf, np.inf, np.inf]
+    )
+    x0 = np.random.rand(6)
+    res = minimize(
+        obj_fun, x0, method="SLSQP", constraints=cons, bounds=bounds, args=(A, B)
+    )
+
+    alpha, beta, gamma, t0, t1, t2 = res.x
+    R = rotation_matrix(alpha, beta, gamma)
+    t = np.array([t0, t1, t2]).reshape(1, 3)
+    Bprime = B @ R + t
+    return Bprime
+
+
 if __name__ == "__main__":
-    g = parse_pdb("data/residues/Ala.pdb", base_fname="data/residues/base_residue.pdb")
+    A = np.random.rand(10, 3)
+    B = np.random.rand(11, 3)
+
+    print(correct_xyz(A, B, (1, 2), 1.0))
+
