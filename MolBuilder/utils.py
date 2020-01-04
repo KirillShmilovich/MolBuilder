@@ -133,19 +133,80 @@ def rotation_matrix(alpha, beta, gamma):
         ]
     )
     R = Rz @ Ry @ Rx
-    return R.T
+    Rt = R.T
+    return Rt
+
+
+def rotation_matrix_batch(alpha, beta, gamma):
+    """ Returns rotation matrix for transofmorming N x 3 coords (A @ R)"""
+    n = len(alpha)
+
+    def ef(x):
+        a = np.empty(n)
+        a.fill(x)
+        return a
+
+    Rx = np.array(
+        [
+            [ef(1), ef(0), ef(0)],
+            [ef(0), np.cos(alpha), -np.sin(alpha)],
+            [ef(0), np.sin(alpha), np.cos(alpha)],
+        ]
+    )
+    Ry = np.array(
+        [
+            [np.cos(beta), ef(0), np.sin(beta)],
+            [ef(0), ef(1), ef(0)],
+            [-np.sin(beta), ef(0), np.cos(beta)],
+        ]
+    )
+    Rz = np.array(
+        [
+            [np.cos(gamma), -np.sin(gamma), ef(0)],
+            [np.sin(gamma), np.cos(gamma), ef(0)],
+            [ef(0), ef(0), ef(1)],
+        ]
+    )
+    # 'li' not 'il' b/c transpose
+    Rt = np.einsum("ij...,jk...,kl...->li...", Rz, Ry, Rx)
+    return Rt
+
+
+def get_rand_unit_vecs(N):
+    x = np.random.randn(N, 3)
+    return x / np.linalg.norm(x, axis=1, keepdims=True)
 
 
 def correct_xyz(A, B, eq_idxs, d_max):
-    i, j = eq_idxs
+    N = 1000
+    node_0_i, node_1_j = eq_idxs
 
-    def obj_fun(x, A, B):
+    thetas = 2 * np.pi * np.random.rand(N, 3)
+    Rs = rotation_matrix_batch(thetas[:, 0], thetas[:, 1], thetas[:, 2])
+
+    Bprime = np.einsum("ij,jk...->ik...", B, Rs)
+    t = (A[node_0_i].reshape(3, 1) - Bprime[node_1_j]).reshape(1, 3, N)
+    Bprime += t
+
+    u = get_rand_unit_vecs(N)
+    T = Bprime.reshape(*Bprime.shape, 1) + d_max * u.reshape(1, 3, 1, N)
+    T = T.reshape(Bprime.shape[0], Bprime.shape[1], -1)
+
+    C = np.linalg.norm(T.mean(axis=0) - A.mean(axis=0).reshape(3, 1), axis=0)
+    best = T[..., C.argmax()]
+    return best
+
+
+def correct_xyz_notWorking(A, B, eq_idxs, d_max, n_restarts=9):
+    node_0_i, node_1_j = eq_idxs
+
+    def obj_fun(x):
         alpha, beta, gamma, t0, t1, t2 = x
         R = rotation_matrix(alpha, beta, gamma)
         t = np.array([t0, t1, t2]).reshape(1, 3)
         Bprime = B @ R + t
         Y = cdist(A, Bprime)
-        return np.linalg.norm(Y)
+        return -1 * np.linalg.norm(Y)
 
     def cons_f(x):
         alpha, beta, gamma, t0, t1, t2 = x
@@ -153,17 +214,20 @@ def correct_xyz(A, B, eq_idxs, d_max):
         t = np.array([t0, t1, t2]).reshape(1, 3)
         Bprime = B @ R + t
         # return np.linalg.norm(A[i] - Bprime[j])
-        return np.abs(np.linalg.norm(A[i] - Bprime[j]) - d_max)
+        return np.abs(np.linalg.norm(A[node_0_i] - Bprime[node_1_j]) - d_max)
 
     # cons = NonlinearConstraint(cons_f, 0, d_max)
     cons = {"type": "eq", "fun": cons_f}
     bounds = Bounds(
         [0, 0, 0, 0, 0, 0], [2 * np.pi, 2 * np.pi, 2 * np.pi, np.inf, np.inf, np.inf]
     )
-    x0 = np.random.rand(6)
-    res = minimize(
-        obj_fun, x0, method="SLSQP", constraints=cons, bounds=bounds, args=(A, B)
-    )
+    for i in range(n_restarts):
+        x0 = np.concatenate([np.random.rand(3), np.random.randn(3) + 2])
+        res = minimize(obj_fun, x0, method="SLSQP", constraints=cons, bounds=bounds)
+        if i == 0:
+            res_best = res
+        if res.fun < res_best.fun:
+            res_best = res
 
     alpha, beta, gamma, t0, t1, t2 = res.x
     R = rotation_matrix(alpha, beta, gamma)
@@ -175,6 +239,5 @@ def correct_xyz(A, B, eq_idxs, d_max):
 if __name__ == "__main__":
     A = np.random.rand(10, 3)
     B = np.random.rand(11, 3)
-
     print(correct_xyz(A, B, (1, 2), 1.0))
 

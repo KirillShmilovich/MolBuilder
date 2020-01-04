@@ -7,16 +7,18 @@ Fragment class
 
 from abc import ABC, abstractclassmethod
 from copy import deepcopy
+
+import mdtraj as md
+import networkx as nx
 import numpy as np
 
 from MolBuilder.utils import (
-    get_base_fname,
-    parse_pdb,
+    correct_xyz,
     dict_compare,
     flatten_list,
-    correct_xyz,
+    get_base_fname,
+    parse_pdb,
 )
-import networkx as nx
 
 
 class AbstractFragment(ABC):
@@ -34,6 +36,7 @@ class Fragment(AbstractFragment):
         self, pdb_fname, fragment_type=None, name=None, fragment_number=0, G=None
     ):
         self.pdb_fname = pdb_fname
+        self.top = md.load(pdb_fname).top
         self.fragment_type = fragment_type
         self.G = self._parse_pdb()
         self._rename(name)
@@ -46,8 +49,34 @@ class Fragment(AbstractFragment):
     def n_fragments(self):
         return len(self.fragments)
 
-    def save_pdb(self):
-        pass
+    @property
+    def trj(self):
+        xyz = [node["xyz"] for i, node in self.G.nodes(data=True)]
+        xyz = np.vstack(xyz)
+        trj = md.Trajectory(xyz, self.top)
+        return trj
+
+    def save_pdb(self, fname):
+        trj = self.trj
+        trj.save_pdb(fname)
+
+    def save_xyz(self, fname):
+        f = open(fname, "w")
+        f.write(str(self.G.number_of_nodes()) + "\n")
+        f.write("\n")
+        for i, node in self.G.nodes(data=True):
+            line = (
+                str(node["element"])
+                + " "
+                + str(10 * node["xyz"][0])
+                + " "
+                + str(10 * node["xyz"][1])
+                + " "
+                + str(10 * node["xyz"][2])
+            )
+            f.write(line)
+            f.write("\n")
+        f.close()
 
     def _parse_pdb(self):
         if self.fragment_type is not None:
@@ -72,6 +101,7 @@ class Fragment(AbstractFragment):
 
     def connect(self, Frag, connect_dict):
         Frag_G = deepcopy(Frag.G)
+        Frag_top = deepcopy(Frag.top)
 
         if len(connect_dict) != 2:
             raise ValueError(f"size of connect dict != 2 ({len(connect_dict)})")
@@ -128,11 +158,7 @@ class Fragment(AbstractFragment):
         connect_dist_1 = [Frag_G[e0][e1]["distance"] for e0, e1 in connect_edges_1]
         connect_dist_1 = sum(connect_dist_1) / len(connect_dist_1)
 
-        connect_dist = (connect_dist_0 + connect_dist_1) / 2.0
-
-        # Remove nodes
-        self.G.remove_nodes_from(nodes_0)
-        Frag_G.remove_nodes_from(nodes_1)
+        connect_dist = max(connect_dist_0, connect_dist_1)
 
         A = [node["xyz"] for i, node in self.G.nodes(data=True)]
         A = np.vstack(A)
@@ -159,6 +185,24 @@ class Fragment(AbstractFragment):
             distance=np.linalg.norm(A[connect_node_0] - Bprime[connect_node_1]),
         )
 
+        at0 = [atom for atom in self.top.atoms if atom.index == connect_node_0][0]
+        self.top = self.top.subset(
+            [atom.index for atom in self.top.atoms if atom.index not in nodes_0]
+        )
+
+        at1 = [atom for atom in Frag_top.atoms if atom.index == connect_node_1][0]
+        Frag_top = Frag_top.subset(
+            [atom.index for atom in Frag_top.atoms if atom.index not in nodes_1]
+        )
+
+        self.top = self.top.join(Frag_top)
+        self.top.add_bond(at0, at1)
+
+        # Remove nodes
+        remove_nodes = nodes_0 + [n + n_G_nodes for n in nodes_1]
+        self.G.remove_nodes_from(remove_nodes)
+        self.G = nx.convert_node_labels_to_integers(self.G)
+
         return self
 
 
@@ -172,7 +216,19 @@ class Residue(Fragment):
 if __name__ == "__main__":
     import MolBuilder as MB
 
-    A = MB.Residue("data/residues/Ala.pdb")
-    A1 = MB.Residue("data/residues/Ala.pdb")
+    A = MB.Residue("/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb")
+    A1 = MB.Residue(
+        "/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb"
+    )
+    A2 = MB.Residue(
+        "/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb"
+    )
+    A3 = MB.Residue(
+        "/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb"
+    )
     A.connect(A1, ({"connect": "N"}, {"connect": "C"}))
+    A.connect(A2, ({"connect": "N", "fragment_number": 1}, {"connect": "C"}))
+    A.connect(A3, ({"connect": "N", "fragment_number": 2}, {"connect": "C"}))
+    A.save_xyz("test.xyz")
+    A.save_pdb("test.pdb")
     print(A.G.nodes(data=True))
