@@ -158,7 +158,7 @@ class Fragment(AbstractFragment):
         connect_dist_1 = [Frag_G[e0][e1]["distance"] for e0, e1 in connect_edges_1]
         connect_dist_1 = sum(connect_dist_1) / len(connect_dist_1)
 
-        connect_dist = max(connect_dist_0, connect_dist_1)
+        connect_dist = (connect_dist_0 + connect_dist_1) / 2.0
 
         A = [node["xyz"] for i, node in self.G.nodes(data=True)]
         A = np.vstack(A)

@@ -177,24 +177,81 @@ def get_rand_unit_vecs(N):
     return x / np.linalg.norm(x, axis=1, keepdims=True)
 
 
-def correct_xyz(A, B, eq_idxs, d_max):
-    N = 1000
-    node_0_i, node_1_j = eq_idxs
+def rotation_matrix_axis(axis, theta):
+    """
+    Return the rotation matrix associated with counterclockwise rotation about
+    the given axis by theta radians.
+    """
+    axis = axis / np.sqrt(np.dot(axis, axis))
+    a = np.cos(theta / 2.0)
+    b, c, d = -axis * np.sin(theta / 2.0)
+    aa, bb, cc, dd = a * a, b * b, c * c, d * d
+    bc, ad, ac, ab, bd, cd = b * c, a * d, a * c, a * b, b * d, c * d
+    R = np.array(
+        [
+            [aa + bb - cc - dd, 2 * (bc + ad), 2 * (bd - ac)],
+            [2 * (bc - ad), aa + cc - bb - dd, 2 * (cd + ab)],
+            [2 * (bd + ac), 2 * (cd - ab), aa + dd - bb - cc],
+        ]
+    )
+    return R.T
 
-    thetas = 2 * np.pi * np.random.rand(N, 3)
-    Rs = rotation_matrix_batch(thetas[:, 0], thetas[:, 1], thetas[:, 2])
 
-    Bprime = np.einsum("ij,jk...->ik...", B, Rs)
-    t = (A[node_0_i].reshape(3, 1) - Bprime[node_1_j]).reshape(1, 3, N)
-    Bprime += t
+def correct_xyz(A, B, eq_idxs, d_max, n_restarts=15):
+    for restart_i in range(n_restarts):
+        N = 100
+        node_0_i, node_1_j = eq_idxs
 
-    u = get_rand_unit_vecs(N)
-    T = Bprime.reshape(*Bprime.shape, 1) + d_max * u.reshape(1, 3, 1, N)
-    T = T.reshape(Bprime.shape[0], Bprime.shape[1], -1)
+        thetas = 2 * np.pi * np.random.rand(N, 3)
+        Rs = rotation_matrix_batch(thetas[:, 0], thetas[:, 1], thetas[:, 2])
 
-    C = np.linalg.norm(T.mean(axis=0) - A.mean(axis=0).reshape(3, 1), axis=0)
-    best = T[..., C.argmax()]
-    return best
+        Bprime = np.einsum("ij,jk...->ik...", B, Rs)
+        t = (A[node_0_i].reshape(3, 1) - Bprime[node_1_j]).reshape(1, 3, N)
+        Bprime += t
+
+        u = get_rand_unit_vecs(N)
+        T = Bprime.reshape(*Bprime.shape, 1) + d_max * u.reshape(1, 3, 1, N)
+        T = T.reshape(Bprime.shape[0], Bprime.shape[1], -1)
+
+        diffmat = np.expand_dims(T, axis=1) - np.expand_dims(
+            A.reshape(*A.shape, 1), axis=0
+        )
+        D = np.sqrt(np.sum(np.square(diffmat), axis=2))
+        C = np.linalg.norm(D, axis=(0, 1))
+        # C = np.linalg.norm(T.mean(axis=0) - A.mean(axis=0).reshape(3, 1), axis=0)
+        best_idx = C.argmax()
+
+        T_best = T[..., best_idx]
+
+        T_best_com = T_best.mean(axis=0, keepdims=True)
+        u = A[node_0_i] - T_best[node_1_j]
+        T_best -= T_best_com
+
+        Rs = [rotation_matrix_axis(u, theta) for theta in np.linspace(0, 2 * np.pi, N)]
+        Rs = np.stack(Rs, axis=-1)
+        T = np.einsum("ij,jk...->ik...", T_best, Rs)
+        T += T_best_com.reshape(1, 3, 1)
+
+        diffmat = np.expand_dims(T, axis=1) - np.expand_dims(
+            A.reshape(*A.shape, 1), axis=0
+        )
+        D = np.sqrt(np.sum(np.square(diffmat), axis=2))
+        C = np.linalg.norm(D, axis=(0, 1))
+        # C = np.linalg.norm(T.mean(axis=0) - A.mean(axis=0).reshape(3, 1), axis=0)
+        best_idx = C.argmax()
+
+        val = C[best_idx]
+        best = T[..., best_idx]
+
+        if restart_i == 0:
+            best_final = best
+            val_final = val
+        else:
+            if val < val_final:
+                best_final = best
+                val_final = val
+
+    return best_final
 
 
 def correct_xyz_notWorking(A, B, eq_idxs, d_max, n_restarts=9):
