@@ -293,8 +293,32 @@ def correct_xyz_notWorking(A, B, eq_idxs, d_max, n_restarts=9):
     return Bprime
 
 
+def write_optim_input(frag, name="fragment.com", n=40, mem="155GB"):
+    f = open(name, "w")
+    f.write(f"%CPU=0-{n-1}\n")
+    f.write(f"%mem={mem}\n")
+    f.write("#p opt=(NoLinear,MaxStep=5) guess=indo b3lyp/6-31G(d)\n")
+    f.write("\n")
+    f.write("Fragment\n")
+    f.write("\n")
+    f.write("0 1\n")
+    for i, node in frag.G.nodes(data=True):
+        line = (
+            str(node["element"])
+            + " "
+            + str(round(10 * node["xyz"][0], 4))
+            + " "
+            + str(round(10 * node["xyz"][1], 4))
+            + " "
+            + str(round(10 * node["xyz"][2], 4))
+        )
+        f.write(line)
+        f.write("\n")
+    f.write("\n")
+    f.close()
+
+
 if __name__ == "__main__":
     A = np.random.rand(10, 3)
     B = np.random.rand(11, 3)
     print(correct_xyz(A, B, (1, 2), 1.0))
-

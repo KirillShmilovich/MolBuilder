@@ -18,6 +18,7 @@ from MolBuilder.utils import (
     flatten_list,
     get_base_fname,
     parse_pdb,
+    write_optim_input,
 )
 
 
@@ -217,18 +218,12 @@ if __name__ == "__main__":
     import MolBuilder as MB
 
     A = MB.Residue("/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb")
-    A1 = MB.Residue(
-        "/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb"
-    )
-    A2 = MB.Residue(
-        "/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb"
-    )
-    A3 = MB.Residue(
-        "/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Ala.pdb"
-    )
-    A.connect(A1, ({"connect": "N"}, {"connect": "C"}))
-    A.connect(A2, ({"connect": "N", "fragment_number": 1}, {"connect": "C"}))
-    A.connect(A3, ({"connect": "N", "fragment_number": 2}, {"connect": "C"}))
+    V = MB.Residue("/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Val.pdb")
+    C = MB.Residue("/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Cys.pdb")
+    G = MB.Residue("/home/kirills/Projects/MolBuilder/MolBuilder/data/residues/Gly.pdb")
+    A.connect(V, ({"connect": "N"}, {"connect": "C"}))
+    A.connect(C, ({"connect": "N", "fragment_number": 1}, {"connect": "C"}))
+    A.connect(G, ({"connect": "N", "fragment_number": 2}, {"connect": "C"}))
     A.save_xyz("test.xyz")
-    A.save_pdb("test.pdb")
+    write_optim_input(A)
     print(A.G.nodes(data=True))
