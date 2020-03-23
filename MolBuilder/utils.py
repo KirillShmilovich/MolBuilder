@@ -197,6 +197,10 @@ def rotation_matrix_axis(axis, theta):
     return R.T
 
 
+def peptide_bond(A, B, N_id, H_id, C_id, d=0.132, theta=2.14675):
+    pass
+
+
 def correct_xyz(A, B, eq_idxs, d_max, n_restarts=15):
     for restart_i in range(n_restarts):
         N = 100

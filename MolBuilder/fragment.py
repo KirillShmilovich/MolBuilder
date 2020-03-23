@@ -225,5 +225,6 @@ if __name__ == "__main__":
     A.connect(C, ({"connect": "N", "fragment_number": 1}, {"connect": "C"}))
     A.connect(G, ({"connect": "N", "fragment_number": 2}, {"connect": "C"}))
     A.save_xyz("test.xyz")
+    A.save_pdb("test.pdb")
     write_optim_input(A)
     print(A.G.nodes(data=True))
